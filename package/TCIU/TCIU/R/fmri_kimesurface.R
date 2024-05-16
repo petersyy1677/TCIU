@@ -90,36 +90,13 @@ fmri_kimesurface <- function(fmridata,
     }
   }
   
-  matrix_ON_smooth <- (1/10000)*as.matrix(spatstat.core::blur(spatstat.geom::as.im(matrix_ON), sigma=0.5))
-  matrix_OFF_smooth <- (1/10000)*as.matrix(spatstat.core::blur(spatstat.geom::as.im(matrix_OFF), sigma=0.5))
+  matrix_ON_smooth <- (1/10000)*as.matrix(spatstat.explore::blur(spatstat.geom::as.im(matrix_ON), sigma=0.5))
+  matrix_OFF_smooth <- (1/10000)*as.matrix(spatstat.explore::blur(spatstat.geom::as.im(matrix_OFF), sigma=0.5))
   
-  hoverText <- cbind(x=1:21, y=1:21, height=as.vector(t(matrix_ON_smooth))) # tail(mytext)
-  custom_txt <- matrix(NA, nrow=21, ncol=21)
-  hoverTextOFF <- cbind(x=1:21, y=1:21, height=as.vector(t(matrix_OFF_smooth))) # tail(mytext)
-  custom_txtOFF <- matrix(NA, nrow=21, ncol=21)
-  
-  for (x in 1:21) {
-    for (y in 1:21) {
-      t = sqrt((x-11)^2 + (y-11)^2)
-      p = atan2(y-11, x-11)
-      custom_txt[x,y] <- paste(' fMRI: ', round(hoverText[(x-1)*21+y, 3], 3),
-                               '\n time: ', round(t, 0),
-                               '\n phi: ', round(p, 2)) 
-      custom_txtOFF[x,y] <- paste(' fMRI: ', round(hoverTextOFF[(x-1)*21+y, 3], 3),
-                                  '\n time: ', round(t, 0),
-                                  '\n phi: ', round(p, 2)) 
-    }
-  }
-  
-  xx2 <- 11 + c(-10:10) %o% cos(seq(-pi, pi, 2*pi/20))
-  yy2 <- 11 + c(-10:10) %o% sin(seq(-pi, pi, 2*pi/20))
-  #zz2 <- as.vector(matrix_ON_smooth) %o% rep(1, 21*21)
-  zz2 <- matrix_ON_smooth
-  ww2 <- matrix_OFF_smooth
-  dd2 <- matrix_ON_smooth-matrix_OFF_smooth
-  
-  dd2scale<-fmri_split_ab_bl(dd2)
-  
+
+  xx2 <- 11 + seq(0,10,1/2) %o% cos(seq(-pi, pi, 2*pi/20))
+  yy2 <- 11 + seq(0,10,1/2) %o% sin(seq(-pi, pi, 2*pi/20))
+ 
   #plot 2D into 3D and make the text of the diameter (time), height (r), and phase (phi)
   f <- list(family = "Courier New, monospace", size = 18, color = "black")
   x <- list(title = "k1", titlefont = f)
@@ -127,11 +104,64 @@ fmri_kimesurface <- function(fmridata,
   z <- list(title = "fMRI Kime-series", titlefont = f)
   zd <- list(title = "fMRI Kime-ON/OFF difference", titlefont = f)
   
-  plot1<-plot_ly(x = ~xx2, y = ~yy2, z = ~zz2, type = "surface", colors=c("#FFFFFF","#0000FF"), # scatterpolar
+  # Added: Reinterpolation
+  ON_transformed <- matrix(0, nrow = 21, ncol = 21)
+  OFF_transformed <- matrix(0, nrow = 21, ncol = 21)
+  ON_OFF_transformed <- matrix(0, nrow = 21, ncol = 21)
+  
+  cart_x <- as.vector(rep(seq(1,21),21))
+  cart_y <- as.vector(sort(rep(seq(1,21),21)))
+  cart_z_on <- as.vector(matrix_ON_smooth)
+  cart_z_diff <- as.vector(matrix_ON_smooth-matrix_OFF_smooth)
+  cart_z_off <- as.vector(matrix_OFF_smooth)
+  
+  for(i in 1:21){
+    for(j in 1:21){
+      #interpolations
+      int_res_on <- akima::interp(cart_x,cart_y,cart_z_on,xx2[i,j],yy2[i,j])
+      int_res_off <- akima::interp(cart_x,cart_y,cart_z_off,xx2[i,j],yy2[i,j])
+      int_res_diff <- akima::interp(cart_x,cart_y,cart_z_diff,xx2[i,j],yy2[i,j])
+      #insert data
+      ON_transformed[i,j] = as.numeric(int_res_on$z)
+      OFF_transformed[i,j] = as.numeric(int_res_off$z)
+      ON_OFF_transformed[i,j] = as.numeric(int_res_diff$z)
+      # if None set to 0
+      if(is.na(ON_transformed[i,j])){
+        ON_transformed[i,j] = 0
+      }
+      if(is.na(ON_OFF_transformed[i,j])){
+        ON_OFF_transformed[i,j] = 0
+      }
+      if(is.na(OFF_transformed[i,j])){
+        OFF_transformed[i,j] = 0
+      }
+    }
+  }
+  #Custom hovering texts
+  custom_txt <- matrix(NA, nrow=21, ncol=21)
+  custom_txtOFF <- matrix(NA, nrow=21, ncol=21)
+  custom_txt_DIFF <- matrix(NA, nrow=21, ncol=21)
+  custom_txt_ON_OFF <- matrix(NA, nrow=21, ncol=21)
+  
+  for (xdir in 1:21) {
+     for (ydir in 1:21) {
+       custom_txt[xdir,ydir] <- paste(' fMRI: ', round(ON_transformed[xdir,ydir], 3),
+                      '\n time: ', round((xdir-1)/2, 0),
+                      '\n phi: ', round(-pi+pi/10*(ydir-1), 2))
+       custom_txtOFF[xdir,ydir] <- paste(' fMRI: ', round(OFF_transformed[xdir,ydir], 3),
+                      '\n time: ', round((xdir-1)/2, 0),
+                      '\n phi: ', round(-pi+pi/10*(ydir-1), 2))
+       custom_txt_DIFF[xdir,ydir] <- paste(' fMRI: ', round(ON_transformed[xdir,ydir]-OFF_transformed[xdir,ydir], 3),
+                      '\n time: ', round((xdir-1)/2, 0),
+                      '\n phi: ', round(-pi+pi/10*(ydir-1), 2))
+       # custom_txt_ON_OFF[xdir,ydir] <- paste(' fMRI: ', round(ON_OFF_transformed[xdir,ydir], 3),
+       #                '\n time: ', round((xdir-1)/2, 0),
+       #                '\n phi: ', round(-pi+pi/10*(ydir-1), 2))
+     }
+  }
+  # Start Plotting
+  plot1<-plot_ly(x = ~xx2, y = ~yy2, z = ~ON_transformed, type = "surface", colors=c("#FFFFFF","#0000FF"), # scatterpolar
           text = custom_txt, hoverinfo = "text", showlegend = FALSE) %>% 
-    #add_trace(x=~xx2, y=~yy2, z=~ww2, colors = c("blue", "yellow"),
-    #          type="surface", text = custom_txtOFF, hoverinfo = "text",
-    #          opacity=0.3, showscale = FALSE, showlegend = FALSE) %>%
     # trace the main Z-axis
     add_trace(x=11, y=11, z=0:0.15, type="scatter3d", mode="lines", 
               line = list(width = 10, color="red"), name="Space(x)", 
@@ -140,11 +170,8 @@ fmri_kimesurface <- function(fmridata,
            scene = list(xaxis = x, yaxis = y, zaxis = z), showlegend = FALSE)
   
   # Plot OFF kime-surface
-  plot2<-plot_ly(x = ~xx2, y = ~yy2, z = ~ww2, type = "surface",colors=c("#FFFFFF","#0000FF"),   # scatterpolar
-          text = custom_txt, hoverinfo = "text", showlegend = FALSE) %>% 
-    #add_trace(x=~xx2, y=~yy2, z=~ww2, colors = c("blue", "yellow"),
-    #          type="surface", text = custom_txtOFF, hoverinfo = "text",
-    #          opacity=0.3, showscale = FALSE, showlegend = FALSE) %>%
+  plot2<-plot_ly(x = ~xx2, y = ~yy2, z = ~OFF_transformed, type = "surface",colors=c("#FFFFFF","#0000FF"),   # scatterpolar
+          text = custom_txtOFF, hoverinfo = "text", showlegend = FALSE) %>% 
     # trace the main Z-axis
     add_trace(x=11, y=11, z=0:0.15, type="scatter3d", mode="lines", 
               line = list(width = 10, color="red"), name="Space(x)", 
@@ -152,11 +179,8 @@ fmri_kimesurface <- function(fmridata,
     layout(dragmode = "turntable", title = "OFF Kime-Surface/Kime-Series at a fixed voxel location",
            scene = list(xaxis = x, yaxis = y, zaxis = z), showlegend = FALSE)
   
-  plot3<-plot_ly(x = ~xx2, y = ~yy2, z = ~dd2, type = "surface",colors = dd2scale, #colors=c("#FFFF00","#FFFFFF","#0000FF"),  # scatterpolar
-          text = custom_txt, hoverinfo = "text", showlegend = FALSE) %>% 
-    #add_trace(x=~xx2, y=~yy2, z=~ww2, colors = c("blue", "yellow"),
-    #          type="surface", text = custom_txtOFF, hoverinfo = "text",
-    #          opacity=0.3, showscale = FALSE, showlegend = FALSE) %>%
+  plot3<-plot_ly(x = ~xx2, y = ~yy2, z = ~ON_transformed-OFF_transformed, type = "surface",colors = fmri_split_ab_bl(ON_transformed-OFF_transformed), #colors=c("#FFFF00","#FFFFFF","#0000FF"),  # scatterpolar
+          text = custom_txt_DIFF, hoverinfo = "text", showlegend = FALSE) %>% 
     # trace the main Z-axis
     add_trace(x=11, y=11, z=-0.15:0.15, type="scatter3d", mode="lines", 
               line = list(width = 10, color="red"), name="Space(x)", 
